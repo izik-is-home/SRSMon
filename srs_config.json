@@ -1,0 +1,52 @@
+{
+  "mode": "live",
+  "comment": "SAP Replication Server (SRS) & Primary ASE Real Connection Settings",
+  "metrics_storage": {
+    "backend": "ase",
+    "server_alias": "TESTDB",
+    "type": "SAP Sybase ASE 16",
+    "host": "10.0.0.18",
+    "port": 5002,
+    "database": "INFODB",
+    "user": "sa",
+    "password": "",
+    "driver": "Adaptive Server Enterprise",
+    "description": "Dedicated database for SRS monitoring metrics, partitions, queues and alerts"
+  },
+  "servers": [
+    {
+      "server_id": 1,
+      "server_name": "REP_PROD_01",
+      "host": "srs-prod-01.corp.local",
+      "port": 5005,
+      "user": "sa",
+      "password": "your_srs_sa_password",
+      "isql_path": "isql",
+      "primary_ase": {
+        "server_name": "ASE_ERP_PRIMARY",
+        "host": "ase-erp-01.corp.local",
+        "port": 5000,
+        "user": "sa",
+        "password": "your_ase_sa_password",
+        "database": "erpdb"
+      }
+    },
+    {
+      "server_id": 2,
+      "server_name": "REP_DR_02",
+      "host": "srs-dr-01.corp.local",
+      "port": 5005,
+      "user": "sa",
+      "password": "your_dr_sa_password",
+      "isql_path": "isql",
+      "primary_ase": {
+        "server_name": "ASE_DR_PRIMARY",
+        "host": "ase-dr-01.corp.local",
+        "port": 5000,
+        "user": "sa",
+        "password": "your_ase_dr_password",
+        "database": "erpdb"
+      }
+    }
+  ]
+}

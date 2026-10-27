@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SAP Replication Server 15.7 Monitoring & Health Dashboard for DBA Teams - Real-time Partitions, Queues, Latency and Lead Blocker Detection">
+  <title>SAP Replication Server Monitor (SRSMon 15.7) | צוות DBA</title>
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Core Design System CSS -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- ====================================================================
+         Top Header & Navigation Bar
+         ==================================================================== -->
+    <header class="top-header" id="topHeader">
+      <div class="brand-section">
+        <div class="brand-logo" id="brandLogo">SRS</div>
+        <div class="brand-title">
+          <h1>
+            <span>SAP Replication Server Monitor</span>
+            <span class="version-tag">SRS 15.7+</span>
+          </h1>
+          <div class="brand-subtitle">כלי ניטור ובקרה מבצעי לשרתי רפליקציה &bull; צוות DBA</div>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <!-- Server Picker -->
+        <div class="server-picker" id="serverPickerContainer">
+          <label for="serverSelect">שרת:</label>
+          <select id="serverSelect" class="server-select">
+            <option value="1">REP_PROD_01 (Production)</option>
+            <option value="2">REP_DR_02 (Disaster Recovery)</option>
+            <option value="3">REP_UAT_01 (Staging / UAT)</option>
+          </select>
+        </div>
+
+        <!-- Global Health Badge -->
+        <div id="globalHealthBadge" class="health-badge HEALTHY">
+          <span class="pulse-dot"></span>
+          <span id="globalHealthText">HEALTHY</span>
+        </div>
+
+        <!-- KPI Pills -->
+        <div class="kpi-pills">
+          <div class="kpi-pill" id="threadsKpiPill" title="סך ה-Threads הפעילים מול המוגדרים">
+            <span class="label">Threads:</span>
+            <span class="val" id="threadsKpiVal">46 / 48</span>
+          </div>
+
+          <div class="kpi-pill" id="lagKpiPill" title="השהיית רפליקציה מרבית מקצה לקצה">
+            <span class="label">Max Lag:</span>
+            <span class="val" id="lagKpiVal">1.4s</span>
+          </div>
+
+          <!-- Live Indicator -->
+          <div class="live-indicator" id="wsLiveIndicator" title="WebSocket Live Stream">
+            <span class="dot"></span>
+            <span>חי (5s)</span>
+          </div>
+        </div>
+
+        <!-- Alerts Action Button -->
+        <button id="activeAlertsBtn" class="btn-action btn-danger" style="display: none;" onclick="ModalManager.toggleAlertsDrawer(true)">
+          <span>🚨</span>
+          <span id="activeAlertsCount">0</span>
+          <span>התראות</span>
+        </button>
+
+        <!-- Quick Scenarios Button -->
+        <button class="btn-action btn-cyan" onclick="document.querySelector('[data-tab=\'scenarios\']').click()">
+          <span>🧪</span>
+          <span>תרחישי DBA</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="dashboard" id="tabNavDashboard">
+        <span>📊</span>
+        <span>לוח בקרה ראשי (Dashboard)</span>
+      </button>
+      <button class="nav-tab" data-tab="topology" id="tabNavTopology">
+        <span>🌐</span>
+        <span>מפת זרימה וטופולוגיה (DAG)</span>
+      </button>
+      <button class="nav-tab" data-tab="console" id="tabNavConsole">
+        <span>💻</span>
+        <span>מסוף פקודות ISQL Admin</span>
+      </button>
+      <button class="nav-tab" data-tab="scenarios" id="tabNavScenarios">
+        <span>🧪</span>
+        <span>הדמיית תרחישי קיצון (Chaos)</span>
+      </button>
+    </nav>
+
+    <!-- ====================================================================
+         Main Dashboard View
+         ==================================================================== -->
+    <main class="main-content">
+
+      <!-- TAB 1: DASHBOARD -->
+      <div id="tab-dashboard" class="tab-pane">
+
+        <!-- 1. Partitions / Stable Storage Section -->
+        <section style="margin-bottom: 2rem;">
+          <div class="section-header">
+            <div>
+              <div class="section-title">
+                <span>ניטור מחיצות ושטח אחסון יציב (Stable Storage Partitions)</span>
+                <span class="cmd-hint">admin disk_space</span>
+              </div>
+              <div class="section-subtitle">מניעת קריסה (Out of Disk) &bull; סף אזהרה: 15% פנוי &bull; סף קריטי: 5% פנוי &bull; חיזוי קצב התמלאות</div>
+            </div>
+          </div>
+
+          <div class="partitions-grid" id="partitionsGrid">
+            <!-- Dynamic partition cards rendered by app.js -->
+            <div style="text-align: center; color: var(--text-dim); padding: 2rem;">טוען מחיצות Stable Storage...</div>
+          </div>
+        </section>
+
+        <!-- 2. Active Queues Breakdown Section -->
+        <section style="margin-bottom: 2rem;">
+          <div class="table-card">
+            <div class="table-toolbar">
+              <div>
+                <div class="section-title">
+                  <span>תורי הודעות פעילים (Inbound & Outbound Queues)</span>
+                  <span class="cmd-hint">admin who, sqm</span>
+                </div>
+                <div class="section-subtitle">פילוח נפחי תורים, מיקומי סגמנטים (First/Last Seg.Block), קצב תעבורה וזיהוי תורים תפוחים</div>
+              </div>
+
+              <!-- Filter Buttons & Search -->
+              <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                <div class="filter-buttons">
+                  <button class="filter-btn active" data-filter="ALL">הכל (All)</button>
+                  <button class="filter-btn" data-filter="INBOUND">נכנסים (:1 Inbound)</button>
+                  <button class="filter-btn" data-filter="OUTBOUND">יוצאים (:0 Outbound)</button>
+                  <button class="filter-btn" data-filter="PROBLEMATIC">בעייתיים / מושהים ⚠️</button>
+                </div>
+                <input type="text" id="queueSearchInput" class="search-box" placeholder="חיפוש לפי שם תור או בסיס נתונים...">
+              </div>
+            </div>
+
+            <!-- Table -->
+            <div class="custom-table-container">
+              <table class="srs-table" id="queuesTable">
+                <thead>
+                  <tr>
+                    <th>שם התור (Queue Info)</th>
+                    <th>סוג (Type)</th>
+                    <th>נפח (Size MB)</th>
+                    <th>מיקום סגמנט (First &rarr; Last Seg.Block)</th>
+                    <th>קריאה הבאה (Next Read)</th>
+                    <th>סטטוס (Status)</th>
+                    <th>השהיה (Lag)</th>
+                    <th>קצב עיבוד</th>
+                    <th style="text-align: right;">פעולות DBA</th>
+                  </tr>
+                </thead>
+                <tbody id="queuesTableBody">
+                  <tr><td colspan="9" style="text-align: center; color: var(--text-dim); padding: 2rem;">טוען נתוני תורים...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Real-Time Queue Growth & Latency Trends Chart -->
+        <section>
+          <div class="chart-card">
+            <div class="chart-header">
+              <div>
+                <div class="section-title">
+                  <span>מגמות גדילת תורים וקצב עיבוד (Real-Time Growth & Throughput Trends)</span>
+                  <span class="cmd-hint">Time-Series Canvas</span>
+                </div>
+                <div class="section-subtitle">השוואת נפח התורים הכולל (MB) מול קצב כניסה ב-Primary וקצב החלה ב-Replicate (MB/s)</div>
+              </div>
+
+              <div class="chart-legend">
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #f59e0b;"></span>
+                  <span>נפח תורים מצטבר (Queue MB)</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #38bdf8;"></span>
+                  <span>קצב נכנס (Inbound MB/s)</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #a855f7;"></span>
+                  <span>קצב יוצא (Outbound MB/s)</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="canvas-container">
+              <canvas id="trendCanvas"></canvas>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- TAB 2: TOPOLOGY DAG -->
+      <div id="tab-topology" class="tab-pane" style="display: none;">
+        <div class="topology-card">
+          <div class="section-header">
+            <div>
+              <div class="section-title">
+                <span>מפת זרימת רפליקציה רב-מדרגית (Multi-Site Replication DAG)</span>
+                <span class="cmd-hint">Topology Flow</span>
+              </div>
+              <div class="section-subtitle">מיפוי ויזואלי של מסלול הרפליקציה: שרת מקור ASE &larr; סוכן RepAgent &larr; שרת SRS &larr; תורים &larr; תהליכי DSI &larr; שרתי יעד</div>
+            </div>
+          </div>
+
+          <div class="topology-container" id="topologyContainer">
+            <!-- Rendered by topology.js -->
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: ADMIN ISQL CONSOLE -->
+      <div id="tab-console" class="tab-pane" style="display: none;">
+        <div class="console-card">
+          <div class="section-header">
+            <div>
+              <div class="section-title">
+                <span>מסוף פקודות דיאגנוסטיקה (SRS Admin Diagnostic Console)</span>
+                <span class="cmd-hint">RS-Admin ISQL Channel</span>
+              </div>
+              <div class="section-subtitle">הרצת פקודות בקרה ישירות מול שרת הרפליקציה ושליפת פלט טבלאי בזמן אמת</div>
+            </div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="console-actions-bar">
+            <button class="quick-cmd-btn" onclick="ModalManager.runAdminCommand('admin who')">admin who</button>
+            <button class="quick-cmd-btn" onclick="ModalManager.runAdminCommand('admin disk_space')">admin disk_space</button>
+            <button class="quick-cmd-btn" onclick="ModalManager.runAdminCommand('admin who, sqm')">admin who, sqm</button>
+            <button class="quick-cmd-btn" onclick="ModalManager.runAdminCommand('admin who, sqt')">admin who, sqt</button>
+            <button class="quick-cmd-btn" onclick="ModalManager.runAdminCommand('admin stats, tps')">admin stats, tps</button>
+            <button class="quick-cmd-btn" onclick="ModalManager.runAdminCommand('admin health')">admin health</button>
+          </div>
+
+          <div class="console-input-row">
+            <input type="text" id="consoleCommandInput" class="console-input" placeholder="הקלד פקודת admin (לדוגמה: admin who)..." value="admin who" onkeydown="if(event.key==='Enter') ModalManager.runAdminCommand()">
+            <button class="btn-action btn-cyan" onclick="ModalManager.runAdminCommand()">
+              <span>▶️ הרץ פקודה</span>
+            </button>
+          </div>
+
+          <div class="console-output-box" id="consoleOutputBox">לחץ על 'הרץ פקודה' או בחר באחת הפקודות המהירות למעלה.</div>
+        </div>
+      </div>
+
+      <!-- TAB 4: DBA CHAOS SCENARIOS -->
+      <div id="tab-scenarios" class="tab-pane" style="display: none;">
+        <div class="table-card">
+          <div class="section-header">
+            <div>
+              <div class="section-title">
+                <span>מרכז הדמיית תרחישי קיצון ואימות התראות (DBA Chaos & Alert Verification)</span>
+                <span class="cmd-hint">Scenario Injector</span>
+              </div>
+              <div class="section-subtitle">הזרקת תקלות ואנומליות לבחינת תגובת המערכת, מנוע ההתראות והצגת הנתונים ב-Dashboard</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; margin-top: 1rem;">
+            <!-- Scenario 1: Inbound Spike -->
+            <div class="partition-card">
+              <div style="font-weight: 700; font-size: 1rem; color: var(--color-cyan);">💥 הזרקת קפיצת תור חדה (15GB Queue Spike)</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">מדמה קפיצה חדה בכתיבת עסקאות ב-Primary ERP המנפחת את התור מעבר ל-10GB ומפעילה התראת Queue Spike.</p>
+              <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <button class="btn-action btn-danger" onclick="window.SRS_APP.triggerScenario('spike', true)">⚡ הפעל קפיצת 15GB</button>
+                <button class="btn-action" onclick="window.SRS_APP.triggerScenario('spike', false)">נרמל תור</button>
+              </div>
+            </div>
+
+            <!-- Scenario 2: Suspend CRM DSI -->
+            <div class="partition-card">
+              <div style="font-weight: 700; font-size: 1rem; color: var(--color-critical);">🛑 השהיית תהליך DSI (CRM Suspended)</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">מדמה תקלה בחיבור ל-CRM Replicate Database הגורמת ל-Thread לעבור ל-Suspended ולהשהיה לטפס ל-185 שניות.</p>
+              <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <button class="btn-action btn-danger" onclick="window.SRS_APP.triggerScenario('crm_dsi_suspend', true)">השהה DSI CRM</button>
+                <button class="btn-action" onclick="window.SRS_APP.triggerScenario('crm_dsi_suspend', false)">חדש (Resume)</button>
+              </div>
+            </div>
+
+            <!-- Scenario 3: Partition Critical Space -->
+            <div class="partition-card">
+              <div style="font-weight: 700; font-size: 1rem; color: var(--color-warning);">💾 מצוקת דיסק קריטית (Partition 2 > 97%)</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">מדמה התמלאות של מחיצת ה-Stable Storage למעל 97% והפעלת התראת Critical מיידית עם צפי התמלאות של פחות מ-1.2 שעות.</p>
+              <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <button class="btn-action btn-danger" onclick="window.SRS_APP.triggerScenario('partition_critical', true)">מלא מחיצה (97.5%)</button>
+                <button class="btn-action" onclick="window.SRS_APP.triggerScenario('partition_critical', false)">נרמל ל-80%</button>
+              </div>
+            </div>
+
+            <!-- Scenario 4: Primary ASE Blocker -->
+            <div class="partition-card">
+              <div style="font-weight: 700; font-size: 1rem; color: var(--color-purple);">🔒 חסימת יומן ב-Primary ASE (SPID 348)</div>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">מדמה טרנזקציית Batch ארוכה (מעל 3 שעות) המחזיקה את ה-syslogshold ומונעת קיטום יומן עסקאות ב-Primary.</p>
+              <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <button class="btn-action btn-cyan" onclick="ModalManager.openLeadBlocker('102:1 ERP_DS.erpdb')">🔍 תחקור Lead Blocker</button>
+                <button class="btn-action" onclick="window.SRS_APP.triggerScenario('kill_blocker', false)">החזר חסימה</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ====================================================================
+         Drill-Down Modal: Primary ASE Lead Blocker
+         ==================================================================== -->
+    <div class="modal-overlay" id="blockerModalOverlay" onclick="if(event.target===this) ModalManager.closeLeadBlocker()">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="blockerModalQueueTitle">
+            <span>🔍</span>
+            <span>איתור טרנזקציה חוסמת בשרת המקור (Primary ASE Lead Blocker)</span>
+          </h3>
+          <button class="modal-close-btn" onclick="ModalManager.closeLeadBlocker()">&times;</button>
+        </div>
+
+        <div class="modal-body" id="blockerModalBodyContent">
+          <!-- Populated dynamically by ModalManager.openLeadBlocker() -->
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-action btn-danger" id="btnKillBlocker" style="display: none;">
+            <span>🔪</span>
+            <span>סימולציית KILL SPID ב-Primary</span>
+          </button>
+          <button class="btn-action" onclick="ModalManager.closeLeadBlocker()">סגור</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         Alerts Slide Drawer
+         ==================================================================== -->
+    <div class="alerts-drawer" id="alertsDrawer">
+      <div class="alerts-drawer-header">
+        <div style="font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span>🚨</span>
+          <span>התראות מערכת פעילות (Active Alerts)</span>
+        </div>
+        <button class="modal-close-btn" onclick="ModalManager.toggleAlertsDrawer(false)">&times;</button>
+      </div>
+
+      <div class="alerts-list" id="alertsDrawerList">
+        <!-- Rendered dynamically by ModalManager.loadAlerts() -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="/static/js/chart.js"></script>
+  <script src="/static/js/topology.js"></script>
+  <script src="/static/js/modal.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
